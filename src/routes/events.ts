@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ObjectId } from "mongodb";
 import { getDb } from "../db";
+import { verifyJwt } from "../middleware/auth";
 
 export const eventTypes = [
   "Cleanup",
@@ -27,7 +28,7 @@ function startOfToday() {
 }
 
 // GET /api/events?limit=6&type=Donation&search=winter
-// Only upcoming events, nearest date first
+// Public: only upcoming events, nearest date first
 router.get("/", async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 0, 50);
   const type = text(req.query.type);
@@ -46,6 +47,7 @@ router.get("/", async (req, res) => {
 });
 
 // GET /api/events/:id
+// Public: anyone can read the details of one event
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
   if (!ObjectId.isValid(id)) {
@@ -65,14 +67,15 @@ router.get("/:id", async (req, res) => {
 });
 
 // POST /api/events
-router.post("/", async (req, res) => {
+// Protected: needs a valid JWT. The creator's email comes from the token.
+router.post("/", verifyJwt, async (req, res) => {
   const body = req.body ?? {};
   const title = text(body.title);
   const description = text(body.description);
   const eventType = text(body.eventType);
   const thumbnail = text(body.thumbnail);
   const location = text(body.location);
-  const creatorEmail = text(body.creatorEmail);
+  const creatorEmail = req.user!.email;
   const eventDate = new Date(`${text(body.eventDate)}T00:00:00.000Z`);
 
   let error = "";
@@ -82,7 +85,6 @@ router.post("/", async (req, res) => {
   else if (!(eventTypes as readonly string[]).includes(eventType))
     error = "Please choose a valid event type";
   else if (!location) error = "Location is required";
-  else if (!creatorEmail) error = "Creator email is required";
   else if (Number.isNaN(eventDate.getTime())) error = "Event date is invalid";
   else if (eventDate <= startOfToday())
     error = "Event date must be in the future";
